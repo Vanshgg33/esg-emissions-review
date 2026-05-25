@@ -1,0 +1,18 @@
+Account_Number,Meter_ID,Service_Address,Read_Start,Read_End,kWh_Usage,Peak_kW,Tariff_Code,Read_Type
+ACC-001234,MTR-A44891,Unit 4 Industriestrasse Frankfurt,2024-01-03,2024-02-01,45230.5,189.2,C2-L,Actual
+ACC-001234,MTR-A44891,Unit 4 Industriestrasse Frankfurt,2024-02-01,2024-03-05,41890.2,175.8,C2-L,Actual
+ACC-001234,MTR-A44891,Unit 4 Industriestrasse Frankfurt,2024-03-05,2024-04-02,43100.0,181.0,C2-L,Actual
+ACC-001235,MTR-B22017,Unit 4 Industriestrasse Frankfurt (HVAC),2024-01-03,2024-02-01,12450.0,62.4,C2-S,Actual
+ACC-001235,MTR-B22017,Unit 4 Industriestrasse Frankfurt (HVAC),2024-02-01,2024-03-05,11980.0,58.7,C2-S,Estimated
+ACC-001235,MTR-B22017,Unit 4 Industriestrasse Frankfurt (HVAC),2024-03-05,2024-04-02,13200.0,65.1,C2-S,Actual
+ACC-002100,MTR-C88312,Chicago Facility - Main Hall,2024-01-05,2024-02-04,78900.0,312.5,COMM-LG,Actual
+ACC-002100,MTR-C88312,Chicago Facility - Main Hall,2024-02-04,2024-03-04,72100.0,289.0,COMM-LG,Actual
+ACC-002100,MTR-C88312,Chicago Facility - Main Hall,2024-03-04,2024-04-03,69450.0,275.2,COMM-LG,Actual
+ACC-002101,MTR-C88313,Chicago Facility - Warehouse,2024-01-05,2024-02-04,23100.0,98.4,COMM-MD,Actual
+ACC-002101,MTR-C88313,Chicago Facility - Warehouse,2024-02-04,2024-03-04,21800.0,92.1,COMM-MD,Actual
+ACC-003050,MTR-D11290,London Office - 5th Floor,2024-01-08,2024-02-05,8920.0,42.3,LV-COMM,Actual
+ACC-003050,MTR-D11290,London Office - 5th Floor,2024-02-05,2024-03-07,8450.0,39.8,LV-COMM,Actual
+ACC-003050,MTR-D11290,London Office - 5th Floor,2024-03-07,2024-04-04,7980.0,37.2,LV-COMM,Actual
+ACC-004001,MTR-E55001,Houston Plant - Production,2024-01-02,2024-02-01,156200.0,589.0,LG-IND,Actual
+ACC-004001,MTR-E55001,Houston Plant - Production,2024-02-01,2024-03-01,148900.0,562.0,LG-IND,Actual
+ACC-004001,MTR-E55001,Houston Plant - Production,2024-03-01,2024-04-01,152400.0,575.0,LG-IND,Actual
