@@ -133,7 +133,7 @@ _EXPENSE_TYPE_MAP: dict[str, str] = {
     'METRO':        'rail',
 }
 
-_DATE_FORMATS = ['%Y-%m-%d', '%m/%d/%Y', '%d/%m/%Y', '%d-%m-%Y', '%d.%m.%Y']
+_DATE_FORMATS = ['%Y-%m-%d', '%Y/%m/%d', '%m/%d/%Y', '%d/%m/%Y', '%d-%m-%Y', '%d.%m.%Y']
 
 
 @dataclass

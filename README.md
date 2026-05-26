@@ -59,7 +59,7 @@ npm run dev
 
 Frontend is now running at **http://localhost:5173**
 
-Open it in a browser. The tenant "Acme Corporation" is pre-selected with 72 seeded records across all three source types.
+Open it in a browser. The tenant "CJP Corporation" is pre-selected with 72 seeded records across all three source types.
 
 ---
 

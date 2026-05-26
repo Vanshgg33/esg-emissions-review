@@ -40,7 +40,7 @@ from typing import Iterator
 from .normalizer import build_header_map, to_canonical_row
 
 
-_DATE_FORMATS = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%d-%m-%Y', '%d.%m.%Y']
+_DATE_FORMATS = ['%Y-%m-%d', '%Y/%m/%d', '%d/%m/%Y', '%m/%d/%Y', '%d-%m-%Y', '%d.%m.%Y']
 
 
 @dataclass

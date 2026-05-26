@@ -20,8 +20,8 @@ class Command(BaseCommand):
         from apps.ingestion.views import _process_sap, _process_utility, _process_travel
 
         tenant, created = Tenant.objects.get_or_create(
-            slug='acme-corp',
-            defaults={'name': 'Acme Corporation'}
+            slug='cjp-corporation',
+            defaults={'name': 'CJP Corporation'}
         )
         if created:
             self.stdout.write(f'Created tenant: {tenant.name}')
