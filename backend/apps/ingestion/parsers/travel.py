@@ -38,6 +38,8 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Iterator
 
+from .normalizer import build_header_map, to_canonical_row
+
 
 # ---------------------------------------------------------------------------
 # Airport coordinate lookup (50 major global hubs, haversine calculation)
@@ -184,7 +186,8 @@ _COLUMN_ALIASES: dict[str, list[str]] = {
     'transaction_date': ['Transaction_Date', 'Date', 'Travel_Date', 'Expense_Date'],
     'employee_id':      ['Employee_ID', 'Employee ID', 'EmpID', 'Emp_ID'],
     'employee_name':    ['Employee_Name', 'Employee Name', 'Name', 'Traveler'],
-    'expense_type':     ['Expense_Type', 'Expense Type', 'Category', 'Type'],
+    'expense_type':     ['Expense_Type', 'Expense Type', 'Category', 'Type',
+                          'expense_category', 'travel_type', 'category', 'expense_class'],
     'vendor':           ['Vendor', 'Supplier', 'Airline', 'Hotel_Name'],
     'origin':           ['Origin', 'From_City', 'Departure_City', 'From'],
     'destination':      ['Destination', 'To_City', 'Arrival_City', 'To'],
@@ -198,12 +201,6 @@ _COLUMN_ALIASES: dict[str, list[str]] = {
 }
 
 
-def _resolve_header(header: str) -> str | None:
-    h = header.strip()
-    for canonical, aliases in _COLUMN_ALIASES.items():
-        if h in aliases or h.lower() in [a.lower() for a in aliases]:
-            return canonical
-    return None
 
 
 def parse(file_content: str | bytes) -> Iterator[TravelParseResult]:
@@ -219,22 +216,14 @@ def parse(file_content: str | bytes) -> Iterator[TravelParseResult]:
     if not reader.fieldnames:
         return
 
-    header_map: dict[str, str] = {}
-    for raw_header in reader.fieldnames:
-        canonical = _resolve_header(raw_header)
-        if canonical:
-            header_map[raw_header] = canonical
+    header_map = build_header_map(reader.fieldnames, _COLUMN_ALIASES)
 
     for row_idx, row in enumerate(reader, start=2):
         raw_values = list(row.values())
         if not any(v and v.strip() for v in raw_values):
             continue
 
-        canonical_row: dict[str, str] = {
-            header_map[k]: (v or '').strip()
-            for k, v in row.items()
-            if k in header_map
-        }
+        canonical_row = to_canonical_row(row, header_map)
 
         result = TravelParseResult(row_number=row_idx, raw_data=dict(row))
 

@@ -10,8 +10,8 @@ Real-world complications handled here:
 - German column headers (WERKS, MENGE, MEINS) alongside English (Plant, Quantity, UoM)
 - SAP UoM codes that are not ISO: L, KG, GAL, M3, CF, MBT, and their SAP-internal
   variants (e.g. 'LT' for liter in some configurations)
-- Date in three common SAP formats: DD.MM.YYYY (German locale), YYYYMMDD (IDoc),
-  MM/DD/YYYY (US plant locale)
+- Date in five common SAP formats: DD.MM.YYYY (German locale), YYYYMMDD (IDoc),
+  MM/DD/YYYY (US plant locale), YYYY/MM/DD, DD-MM-YYYY, YYYY.MM.DD
 - Plant codes (WERKS) that are opaque strings like 'DE01', 'US02' — we pass them
   through and let the facility lookup table in PLANT_NAMES do display name mapping
 - Movement types: we only want goods-issue movements (consumption), not goods-receipt.
@@ -34,6 +34,8 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Iterator
+
+from .normalizer import build_header_map, to_canonical_row
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +70,9 @@ _UOM_TO_STANDARD: dict[str, tuple[str, Decimal]] = {
     'GLI':  ('L',   Decimal('4.54609')),   # UK (imperial) gallon
     'KG':   ('KG',  Decimal('1')),         # density applied in caller
     'G':    ('KG',  Decimal('0.001')),
-    'TO':   ('KG',  Decimal('1000')),      # metric ton
+    'TO':   ('KG',  Decimal('1000')),      # metric ton (SAP internal)
+    'TON':  ('KG',  Decimal('1000')),      # metric ton (common alias)
+    'MT':   ('KG',  Decimal('1000')),      # metric ton (ISO alias)
     'M3':   ('M3',  Decimal('1')),
     'CF':   ('M3',  Decimal('0.028317')),  # cubic feet
     'CCF':  ('M3',  Decimal('2.83168')),   # hundred cubic feet
@@ -124,24 +128,17 @@ class SapParseResult:
     cost_center: str = ''
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    flags: list[str] = field(default_factory=list)  # analyst-review flags (row ingested but needs sign-off)
 
     @property
     def ok(self) -> bool:
         return len(self.errors) == 0
 
 
-def _resolve_header(header: str) -> str | None:
-    """Map a raw CSV header to its canonical name, or None if unrecognised."""
-    # Strip whitespace AND Unicode BOM/zero-width characters that survive string decoding
-    h = header.strip().lstrip('\ufeff\u200b\u00a0')
-    for canonical, aliases in _COLUMN_ALIASES.items():
-        if h in aliases or h.lower() in [a.lower() for a in aliases]:
-            return canonical
-    return None
-
 
 def _parse_sap_date(raw: str) -> date:
-    for fmt in ('%d.%m.%Y', '%Y%m%d', '%m/%d/%Y', '%Y-%m-%d', '%d/%m/%Y'):
+    for fmt in ('%d.%m.%Y', '%Y%m%d', '%m/%d/%Y', '%Y-%m-%d', '%d/%m/%Y',
+                '%Y/%m/%d', '%d-%m-%Y', '%Y.%m.%d'):
         try:
             return datetime.strptime(raw.strip(), fmt).date()
         except ValueError:
@@ -213,13 +210,7 @@ def parse(file_content: str | bytes) -> Iterator[SapParseResult]:
 
     logger.debug("SAP parser: raw fieldnames=%r", reader.fieldnames)
 
-    # Map original fieldname → canonical name.
-    # Key is the ORIGINAL string (DictReader uses it as row key); value is canonical.
-    header_map: dict[str, str] = {}
-    for raw_header in reader.fieldnames:
-        canonical = _resolve_header(raw_header)
-        if canonical:
-            header_map[raw_header] = canonical
+    header_map = build_header_map(list(reader.fieldnames), _COLUMN_ALIASES)
 
     logger.debug("SAP parser: resolved header_map=%r", header_map)
     if not header_map:
@@ -237,11 +228,7 @@ def parse(file_content: str | bytes) -> Iterator[SapParseResult]:
         if first_val.startswith('*') or first_val.lower() in ('total', 'gesamt', 'summe'):
             continue
 
-        # Map row to canonical fields
-        canonical_row: dict[str, str] = {}
-        for raw_header, value in row.items():
-            if raw_header in header_map:
-                canonical_row[header_map[raw_header]] = (value or '').strip()
+        canonical_row = to_canonical_row(row, header_map)
         logger.debug("SAP parser: row %d canonical=%r", row_idx, canonical_row)
 
         raw_data = dict(row)
@@ -267,7 +254,7 @@ def parse(file_content: str | bytes) -> Iterator[SapParseResult]:
 
         unit_raw = canonical_row.get('unit', '').strip().upper()
         if not unit_raw:
-            result.errors.append("Missing unit (MEINS)")
+            result.warnings.append("Missing unit (MEINS) — unit conversion skipped; manual review required")
 
         date_str = canonical_row.get('post_date', '').strip()
         if not date_str:
@@ -289,22 +276,30 @@ def parse(file_content: str | bytes) -> Iterator[SapParseResult]:
         result.unit_raw = unit_raw
         result.fuel_type = _detect_fuel_type(result.description)
 
-        # Quality flags
+        # Analyst-review flags (row is ingested; analyst must sign off)
         if not result.fuel_type:
-            result.warnings.append(
+            result.flags.append(
                 f"Could not identify fuel type from description '{result.description}' — "
                 "emission factor will not be applied; manual review required"
             )
 
-        if result.quantity_raw <= 0:
-            result.warnings.append(f"Non-positive quantity ({result.quantity_raw}) — suspicious")
+        if result.quantity_raw < 0:
+            result.flags.append(
+                f"Negative quantity ({result.quantity_raw}) — possible return/reversal; verify before approving"
+            )
+        elif result.quantity_raw == 0:
+            result.warnings.append(f"Zero quantity ({result.quantity_raw}) — suspicious")
 
         # Normalize units
-        result.quantity_normalized, result.unit_normalized = _normalize_quantity(
-            result.quantity_raw, result.unit_raw, result.fuel_type
-        )
+        if not unit_raw:
+            result.quantity_normalized = result.quantity_raw
+            result.unit_normalized = ''
+        else:
+            result.quantity_normalized, result.unit_normalized = _normalize_quantity(
+                result.quantity_raw, result.unit_raw, result.fuel_type
+            )
 
-        if result.unit_normalized == result.unit_raw and result.unit_raw not in ('L', 'M3', 'KWH'):
+        if unit_raw and result.unit_normalized == result.unit_raw and result.unit_raw not in ('L', 'M3', 'KWH', 'KG'):
             result.warnings.append(
                 f"Unit '{result.unit_raw}' not in known SAP UoM table — "
                 "no conversion applied; verify manually"

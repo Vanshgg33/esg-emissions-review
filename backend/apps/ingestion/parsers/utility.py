@@ -37,6 +37,8 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Iterator
 
+from .normalizer import build_header_map, to_canonical_row
+
 
 _DATE_FORMATS = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%d-%m-%Y', '%d.%m.%Y']
 
@@ -76,8 +78,10 @@ _COLUMN_ALIASES: dict[str, list[str]] = {
     'account_number': ['Account_Number', 'Account Number', 'AccountNumber', 'account_no', 'ACC'],
     'meter_id':       ['Meter_ID', 'Meter ID', 'MeterID', 'Meter', 'meter_id', 'MPAN', 'MPRN'],
     'service_address':['Service_Address', 'Service Address', 'Address', 'Site'],
-    'period_start':   ['Read_Start', 'From', 'Start_Date', 'Bill_Start', 'Period_Start', 'StartDate'],
-    'period_end':     ['Read_End', 'To', 'End_Date', 'Bill_End', 'Period_End', 'EndDate'],
+    'period_start':   ['Read_Start', 'From', 'Start_Date', 'Bill_Start', 'Period_Start', 'StartDate',
+                        'billing_start', 'start_date', 'from_date'],
+    'period_end':     ['Read_End', 'To', 'End_Date', 'Bill_End', 'Period_End', 'EndDate',
+                        'billing_end', 'end_date', 'to_date'],
     'kwh_usage':      ['kWh_Usage', 'kWh', 'Usage_kWh', 'Energy_kWh', 'kwh', 'Consumption'],
     'mwh_usage':      ['MWh_Usage', 'MWh', 'Usage_MWh', 'Energy_MWh', 'mwh'],
     'tariff_code':    ['Tariff_Code', 'Tariff', 'Rate_Code', 'Rate', 'tariff'],
@@ -85,12 +89,6 @@ _COLUMN_ALIASES: dict[str, list[str]] = {
 }
 
 
-def _resolve_header(header: str) -> str | None:
-    h = header.strip()
-    for canonical, aliases in _COLUMN_ALIASES.items():
-        if h in aliases or h.lower() in [a.lower() for a in aliases]:
-            return canonical
-    return None
 
 
 def parse(file_content: str | bytes) -> Iterator[UtilityParseResult]:
@@ -109,22 +107,14 @@ def parse(file_content: str | bytes) -> Iterator[UtilityParseResult]:
     if not reader.fieldnames:
         return
 
-    header_map: dict[str, str] = {}
-    for raw_header in reader.fieldnames:
-        canonical = _resolve_header(raw_header)
-        if canonical:
-            header_map[raw_header] = canonical
+    header_map = build_header_map(reader.fieldnames, _COLUMN_ALIASES)
 
     for row_idx, row in enumerate(reader, start=2):
         raw_values = list(row.values())
         if not any(v and v.strip() for v in raw_values):
             continue
 
-        canonical_row: dict[str, str] = {
-            header_map[k]: (v or '').strip()
-            for k, v in row.items()
-            if k in header_map
-        }
+        canonical_row = to_canonical_row(row, header_map)
 
         result = UtilityParseResult(row_number=row_idx, raw_data=dict(row))
 
