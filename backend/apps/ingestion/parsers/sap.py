@@ -29,10 +29,13 @@ What we are NOT handling (documented in DECISIONS.md):
 
 import csv
 import io
+import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Iterator
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -129,7 +132,8 @@ class SapParseResult:
 
 def _resolve_header(header: str) -> str | None:
     """Map a raw CSV header to its canonical name, or None if unrecognised."""
-    h = header.strip()
+    # Strip whitespace AND Unicode BOM/zero-width characters that survive string decoding
+    h = header.strip().lstrip('\ufeff\u200b\u00a0')
     for canonical, aliases in _COLUMN_ALIASES.items():
         if h in aliases or h.lower() in [a.lower() for a in aliases]:
             return canonical
@@ -173,10 +177,16 @@ def _normalize_quantity(quantity: Decimal, raw_unit: str, fuel_type: str) -> tup
     return converted, standard_unit
 
 
+def _detect_delimiter(sample: str) -> str:
+    """Pick the most likely delimiter from tab, semicolon, comma."""
+    counts = {'\t': sample.count('\t'), ';': sample.count(';'), ',': sample.count(',')}
+    return max(counts, key=counts.get)
+
+
 def parse(file_content: str | bytes) -> Iterator[SapParseResult]:
     """
     Parse a SAP flat-file export. Yields one SapParseResult per data row.
-    Handles both tab-delimited and semicolon-delimited exports.
+    Handles tab-delimited, semicolon-delimited, and comma-delimited exports.
     Skips header-only rows, SAP summary footer lines, and blank rows.
     """
     if isinstance(file_content, bytes):
@@ -188,22 +198,35 @@ def parse(file_content: str | bytes) -> Iterator[SapParseResult]:
             except UnicodeDecodeError:
                 continue
 
-    # Detect delimiter: SAP standard exports are tab-delimited;
-    # some ABAP Z-reports use semicolons
+    # Strip BOM that survives when content arrives as a pre-decoded str
+    file_content = file_content.lstrip('\ufeff')
+
     sample = file_content[:2000]
-    delimiter = '\t' if sample.count('\t') > sample.count(';') else ';'
+    delimiter = _detect_delimiter(sample)
+    logger.debug("SAP parser: detected delimiter=%r", delimiter)
 
     reader = csv.DictReader(io.StringIO(file_content), delimiter=delimiter)
 
-    # Build header mapping from whatever headers are in the file
     if reader.fieldnames is None:
+        logger.warning("SAP parser: no fieldnames found — empty file?")
         return
 
+    logger.debug("SAP parser: raw fieldnames=%r", reader.fieldnames)
+
+    # Map original fieldname → canonical name.
+    # Key is the ORIGINAL string (DictReader uses it as row key); value is canonical.
     header_map: dict[str, str] = {}
     for raw_header in reader.fieldnames:
         canonical = _resolve_header(raw_header)
         if canonical:
             header_map[raw_header] = canonical
+
+    logger.debug("SAP parser: resolved header_map=%r", header_map)
+    if not header_map:
+        logger.error(
+            "SAP parser: zero headers resolved — delimiter mismatch or unrecognised headers. "
+            "raw fieldnames: %r", reader.fieldnames
+        )
 
     for row_idx, row in enumerate(reader, start=2):
         # Skip SAP footer lines (they often start with '*' or are empty)
@@ -219,6 +242,7 @@ def parse(file_content: str | bytes) -> Iterator[SapParseResult]:
         for raw_header, value in row.items():
             if raw_header in header_map:
                 canonical_row[header_map[raw_header]] = (value or '').strip()
+        logger.debug("SAP parser: row %d canonical=%r", row_idx, canonical_row)
 
         raw_data = dict(row)
         result = SapParseResult(row_number=row_idx, raw_data=raw_data)
