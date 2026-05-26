@@ -19,6 +19,10 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         from apps.ingestion.views import _process_sap, _process_utility, _process_travel
 
+        # Migrate old slug if it exists from a previous deploy
+        Tenant.objects.filter(slug='acme-corp').update(name='CJP Corporation', slug='cjp-corporation')
+        Tenant.objects.filter(slug='esg-corporation').update(name='CJP Corporation', slug='cjp-corporation')
+
         tenant, created = Tenant.objects.get_or_create(
             slug='cjp-corporation',
             defaults={'name': 'CJP Corporation'}
